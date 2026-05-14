@@ -4,6 +4,7 @@ import helmet from "helmet";
 import morgan from "morgan";
 
 import env, { isProd, isTest } from "./config/env.js";
+import authRoutes from "./routes/auth.routes.js";
 import healthRoutes from "./routes/health.routes.js";
 import { errorHandler, notFound } from "./middleware/error.js";
 
@@ -36,9 +37,9 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/health", healthRoutes);
+app.use("/api/auth", authRoutes);
 
-// Domain routes get mounted under /api/ in later phases:
-//   app.use("/api/auth", authRoutes);    // Phase 2
+// Future domain routes:
 //   app.use("/api/users", userRoutes);   // Phase 4
 //   app.use("/api/posts", postRoutes);   // Phase 3
 
