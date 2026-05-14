@@ -21,6 +21,11 @@ let mongod;
 test.before(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
+  // Mongoose builds schema indexes lazily after connect. Awaiting init()
+  // here guarantees the unique indexes on username/email exist before
+  // any test runs, so duplicate-key tests can't race the index build on
+  // a slow machine.
+  await User.init();
 });
 
 test.after(async () => {
@@ -225,22 +230,44 @@ test("me: token whose sub is not a valid ObjectId returns 401, not 400", async (
 
 // --- Concurrency / DRY regressions -------------------------------------
 
-test("signup: 11000 race still produces the per-field 409 envelope", async () => {
-  // Simulate the race-window outcome by seeding the user first, then
-  // calling create() with the same key. The model's unique index fires
-  // 11000 and the controller should rewrite it.
+test("signup: 11000 fallback fires when the pre-check misses", async () => {
+  // The controller pre-checks via User.findOne(); only if THAT returns
+  // null does the race actually reach User.create() and trigger 11000.
+  // To exercise the fallback specifically, we seed the conflicting user
+  // AND stub findOne() to return null — simulating a concurrent signup
+  // that slipped through the pre-check window.
   await User.create({
     username: "racer",
     email: "racer@example.com",
     password: "password1",
   });
-  const res = await request(app).post("/api/auth/signup").send({
-    username: "racer",
-    email: "racer2@example.com",
-    password: "password2",
-  });
-  assert.equal(res.status, 409);
-  assert.equal(res.body.error.details.username, "username already taken");
+
+  const originalFindOne = User.findOne.bind(User);
+  User.findOne = function stubbed() {
+    // Mongoose's findOne returns a Query; reproduce the chain shape the
+    // controller calls (.select(...).lean()) and resolve null.
+    return {
+      select() {
+        return this;
+      },
+      lean() {
+        return Promise.resolve(null);
+      },
+    };
+  };
+
+  try {
+    const res = await request(app).post("/api/auth/signup").send({
+      username: "racer",
+      email: "racer2@example.com",
+      password: "password2",
+    });
+    assert.equal(res.status, 409);
+    assert.equal(res.body.error.details.username, "username already taken");
+    assert.equal(res.body.error.message, "Account already exists");
+  } finally {
+    User.findOne = originalFindOne;
+  }
 });
 
 test("login: timing for unknown user and wrong-password user is in the same ballpark", async () => {
