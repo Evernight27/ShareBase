@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Env files (NEVER commit secrets)
+.env
+.env.local
+.env.*.local
+config.env
+server/.env
+server/config.env
+client/.env
+client/.env.local
+
+# Build output
+build/
+dist/
+.next/
+out/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+*.log
+
+# Local uploads (used as Cloudinary fallback in dev)
+server/uploads/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Coverage
+coverage/
+.nyc_output/
