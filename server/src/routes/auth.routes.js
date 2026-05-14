@@ -8,6 +8,16 @@ import validate from "../middleware/validate.js";
 
 const router = Router();
 
+// All auth responses (signup/login tokens, /me user object) are
+// user-specific and must never be cached by an intermediate proxy or
+// CDN. A naive cache that ignores Authorization could serve one user's
+// /me to another, or replay the same JWT across clients. no-store is
+// the strongest directive and the easiest to reason about.
+router.use((req, res, next) => {
+  res.set("Cache-Control", "no-store");
+  next();
+});
+
 // Per-IP rate limit on the credential-touching endpoints. Tight enough
 // to slow brute force, loose enough that a frustrated real user
 // retrying after a typo isn't locked out. Disabled in test so the
