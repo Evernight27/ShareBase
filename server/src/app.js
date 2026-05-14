@@ -3,7 +3,7 @@ import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 
-import env, { isTest } from "./config/env.js";
+import env, { isProd, isTest } from "./config/env.js";
 import healthRoutes from "./routes/health.routes.js";
 import { errorHandler, notFound } from "./middleware/error.js";
 
@@ -22,7 +22,7 @@ app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
 if (!isTest) {
-  app.use(morgan(env.NODE_ENV === "production" ? "combined" : "dev"));
+  app.use(morgan(isProd ? "combined" : "dev"));
 }
 
 app.get("/", (req, res) => {
