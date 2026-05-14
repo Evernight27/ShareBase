@@ -11,6 +11,12 @@ const app = express();
 
 app.disable("x-powered-by");
 
+// Trust the first proxy hop (matches Render/Fly/Vercel/Railway deploys).
+// Without this, `req.ip` is the proxy's IP, which would make Phase 2's
+// per-client rate limiting collapse to app-wide limiting. For multi-hop
+// setups, override this in a deploy-specific wrapper.
+app.set("trust proxy", 1);
+
 app.use(helmet());
 app.use(
   cors({
