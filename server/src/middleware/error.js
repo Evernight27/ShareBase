@@ -35,6 +35,15 @@ export function errorHandler(err, req, res, next) {
     // Mongoose cast errors (bad ObjectId, etc.) -> 400.
     status = 400;
     message = `Invalid ${err.path}: ${err.value}`;
+  } else if (err.name === "TokenExpiredError") {
+    // jsonwebtoken: signed token whose `exp` is in the past.
+    status = 401;
+    message = "Token expired";
+  } else if (err.name === "JsonWebTokenError" || err.name === "NotBeforeError") {
+    // jsonwebtoken: malformed / signature mismatch / before-nbf.
+    // Deliberately generic — don't tell an attacker which check failed.
+    status = 401;
+    message = "Invalid token";
   }
 
   if (status >= 500) {
