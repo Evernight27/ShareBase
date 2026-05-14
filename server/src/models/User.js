@@ -1,7 +1,10 @@
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 
-const USERNAME_PATTERN = /^[a-z0-9._]{3,30}$/;
+// Exported so request-validation schemas can reuse the same regex
+// without drift between Mongoose `match` and Zod `regex` rules.
+export const USERNAME_PATTERN = /^[a-z0-9._]{3,30}$/;
+export const USERNAME_MESSAGE = "username must be 3-30 chars (a-z, 0-9, '.', '_')";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const BCRYPT_ROUNDS = 10;
 
@@ -12,9 +15,11 @@ const userSchema = new mongoose.Schema(
       required: [true, "username is required"],
       lowercase: true,
       trim: true,
+      // `unique: true` already creates a unique index, so we don't add
+      // `index: true` on top — that would build a redundant non-unique
+      // index and Mongoose 9 warns about it at startup.
       unique: true,
-      index: true,
-      match: [USERNAME_PATTERN, "username must be 3-30 chars (a-z, 0-9, '.', '_')"],
+      match: [USERNAME_PATTERN, USERNAME_MESSAGE],
     },
     email: {
       type: String,
@@ -22,7 +27,6 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
       unique: true,
-      index: true,
       match: [EMAIL_PATTERN, "email is invalid"],
     },
     // Hashed; never returned to clients. `select: false` keeps it out of
