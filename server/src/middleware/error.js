@@ -6,31 +6,33 @@ export function notFound(req, res, next) {
 }
 
 // Express identifies error middleware by its 4-arg signature, so `next` must
-// stay even though it's unused.
-// eslint-disable-next-line no-unused-vars
+// stay even though it's only used for the headers-sent fall-through.
 export function errorHandler(err, req, res, next) {
+  // If the response is already streaming, let Express's default handler
+  // abort the connection instead of throwing "Cannot set headers after
+  // they are sent" on top of the original error.
+  if (res.headersSent) {
+    return next(err);
+  }
+
   let status = err.status || err.statusCode || 500;
   let message = err.message || "Internal server error";
   let details = err.details;
 
-  // Mongoose validation errors -> 400 with field details.
   if (err.name === "ValidationError") {
+    // Mongoose validation errors -> 400 with field details.
     status = 400;
     details = Object.fromEntries(
       Object.entries(err.errors || {}).map(([k, v]) => [k, v.message]),
     );
     message = "Validation failed";
-  }
-
-  // Mongoose duplicate-key errors -> 409.
-  if (err.code === 11000) {
+  } else if (err.code === 11000) {
+    // Mongoose duplicate-key errors -> 409.
     status = 409;
     details = err.keyValue;
     message = "Duplicate value";
-  }
-
-  // Mongoose cast errors (bad ObjectId, etc.) -> 400.
-  if (err.name === "CastError") {
+  } else if (err.name === "CastError") {
+    // Mongoose cast errors (bad ObjectId, etc.) -> 400.
     status = 400;
     message = `Invalid ${err.path}: ${err.value}`;
   }
