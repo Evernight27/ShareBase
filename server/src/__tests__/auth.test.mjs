@@ -213,6 +213,65 @@ test("me: token for a deleted user returns 401", async () => {
   assert.match(res.body.error.message, /no longer exists/);
 });
 
+test("me: token whose sub is not a valid ObjectId returns 401, not 400", async () => {
+  // signToken stringifies the input; nothing stops us minting a token
+  // with an arbitrary `sub`. Before the ObjectId guard, this fell
+  // through to Mongoose's CastError -> 400 envelope.
+  const token = signToken("not-an-objectid");
+  const res = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${token}`);
+  assert.equal(res.status, 401);
+  assert.match(res.body.error.message, /Invalid token payload/);
+});
+
+// --- Concurrency / DRY regressions -------------------------------------
+
+test("signup: 11000 race still produces the per-field 409 envelope", async () => {
+  // Simulate the race-window outcome by seeding the user first, then
+  // calling create() with the same key. The model's unique index fires
+  // 11000 and the controller should rewrite it.
+  await User.create({
+    username: "racer",
+    email: "racer@example.com",
+    password: "password1",
+  });
+  const res = await request(app).post("/api/auth/signup").send({
+    username: "racer",
+    email: "racer2@example.com",
+    password: "password2",
+  });
+  assert.equal(res.status, 409);
+  assert.equal(res.body.error.details.username, "username already taken");
+});
+
+test("login: timing for unknown user and wrong-password user is in the same ballpark", async () => {
+  // Not a strict timing assertion — just a sanity check that the
+  // dummy-hash compare actually runs (which makes the two paths
+  // share their bcrypt cost). Both legs must be 401s, and both must
+  // take a non-trivial amount of time (bcrypt @ rounds=10 > ~30ms).
+  await makeUser({ username: "victim", email: "victim@example.com", password: "password1" });
+
+  const start1 = Date.now();
+  const r1 = await request(app).post("/api/auth/login").send({
+    identifier: "victim",
+    password: "wrong-password",
+  });
+  const t1 = Date.now() - start1;
+
+  const start2 = Date.now();
+  const r2 = await request(app).post("/api/auth/login").send({
+    identifier: "ghost",
+    password: "wrong-password",
+  });
+  const t2 = Date.now() - start2;
+
+  assert.equal(r1.status, 401);
+  assert.equal(r2.status, 401);
+  // bcrypt @ 10 rounds is ~30-80ms on a typical CI machine. If the
+  // unknown-user path is skipping bcrypt it'll come back in 1-5ms.
+  // Threshold is loose to keep the test stable on slow boxes.
+  assert.ok(t2 > 20, `unknown-user path must run bcrypt (got ${t2}ms)`);
+});
+
 // --- Unit-ish checks ----------------------------------------------------
 
 test("jwt: sign / verify round trip carries the user id in `sub`", () => {
