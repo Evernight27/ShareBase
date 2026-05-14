@@ -184,6 +184,29 @@ test("me: returns the authenticated user", async () => {
   assert.equal(res.body.user.password, undefined);
 });
 
+test("auth responses are no-store (signup, login, me)", async () => {
+  // /me, /login, /signup all return user-specific or bearer-tied data;
+  // an intermediate cache ignoring Authorization could cross-leak them.
+  // The router sets Cache-Control: no-store; assert the header sticks
+  // on all three responses (success and error paths).
+  const user = await makeUser({ username: "cacher", email: "cacher@example.com", password: "password1" });
+  const token = signToken(user._id);
+  const meRes = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${token}`);
+  assert.equal(meRes.headers["cache-control"], "no-store");
+
+  const loginRes = await request(app).post("/api/auth/login").send({
+    identifier: "cacher",
+    password: "password1",
+  });
+  assert.equal(loginRes.headers["cache-control"], "no-store");
+
+  // Even validation errors must not be cacheable — they leak which
+  // fields were valid.
+  const badRes = await request(app).post("/api/auth/signup").send({});
+  assert.equal(badRes.status, 400);
+  assert.equal(badRes.headers["cache-control"], "no-store");
+});
+
 test("me: missing header returns 401 + 'Missing or malformed'", async () => {
   const res = await request(app).get("/api/auth/me");
   assert.equal(res.status, 401);
