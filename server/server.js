@@ -1,18 +1,39 @@
-import express from "express";
-import cors from "cors";
-import records from "./routes/record.js";
-import dotenv from "dotenv";
+import app from "./src/app.js";
+import env, { assertRequiredEnv } from "./src/config/env.js";
+import { connectDB, disconnectDB } from "./src/config/db.js";
 
-dotenv.config({ path: "./config.env" });
+async function start() {
+  try {
+    assertRequiredEnv();
+  } catch (err) {
+    console.error(`[startup] ${err.message}`);
+    process.exit(1);
+  }
 
-const PORT = process.env.PORT || 5050;
-const app = express();
+  try {
+    await connectDB();
+    console.log("[mongo] connected");
+  } catch (err) {
+    console.error("[mongo] initial connection failed:", err.message);
+    process.exit(1);
+  }
 
-app.use(cors());
-app.use(express.json());
-app.use("/record", records);
+  const server = app.listen(env.PORT, () => {
+    console.log(`[http] ShareBase API listening on http://localhost:${env.PORT}`);
+  });
 
-// start the Express server
-app.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
-});
+  const shutdown = async (signal) => {
+    console.log(`\n[shutdown] received ${signal}, closing gracefully...`);
+    server.close(async () => {
+      await disconnectDB();
+      process.exit(0);
+    });
+    // Force-exit if close hangs.
+    setTimeout(() => process.exit(1), 10_000).unref();
+  };
+
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+}
+
+start();
