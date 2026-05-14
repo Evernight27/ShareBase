@@ -25,9 +25,10 @@ ShareBase/
 │   ├── src/
 │   │   ├── app.js       Express app (middleware + routes, no listen)
 │   │   ├── config/      env.js, db.js
-│   │   ├── middleware/  error.js (centralized error handler)
+│   │   ├── middleware/  error.js (notFound + centralized error handler)
 │   │   ├── routes/      health.routes.js (more added in Phase 2+)
-│   │   └── utils/       asyncHandler.js, ApiError.js
+│   │   ├── utils/       asyncHandler.js, ApiError.js
+│   │   └── __tests__/   smoke.test.mjs (node:test)
 │   ├── .env.example     Copy to .env and fill in
 │   └── package.json
 └── client/              (added in Phase 5)
@@ -61,13 +62,20 @@ phases described in [`PLAN.md`](./PLAN.md).
 
 ## Tests
 
-A small smoke test exercises the routes, the centralized error handler,
-and the `res.headersSent` guard. Run it with:
+A `node:test` smoke suite (12 assertions, no extra deps) covers the real
+routes (`/`, the three health endpoints with their `Cache-Control: no-store`
+header, and the 404 path) plus the centralized error handler's envelope
+mapping for `ApiError`, Mongoose `ValidationError`, duplicate-key (`11000`),
+`CastError`, and the `res.headersSent` guard.
 
 ```bash
 cd server
 npm test
 ```
+
+`npm test` is just `node --test`, which auto-discovers `**/*.test.mjs`
+under the package and skips `node_modules`. Drop new test files anywhere
+in `src/` and they'll be picked up.
 
 ## Environment variables
 
