@@ -1,3 +1,5 @@
+import mongoose from "mongoose";
+
 import User from "../models/User.js";
 import ApiError from "../utils/ApiError.js";
 import asyncHandler from "../utils/asyncHandler.js";
@@ -23,6 +25,15 @@ export const protect = asyncHandler(async (req, res, next) => {
   }
 
   const payload = verifyToken(token);
+
+  // A signed token can carry a non-ObjectId `sub` (test fixtures, or a
+  // forged-payload-validated-signature attack via a leaked secret). Reject
+  // here so it surfaces as 401 instead of leaking a 400 CastError envelope
+  // with the path name from the error handler.
+  if (typeof payload.sub !== "string" || !mongoose.isValidObjectId(payload.sub)) {
+    throw new ApiError(401, "Invalid token payload");
+  }
+
   const user = await User.findById(payload.sub);
   if (!user) {
     throw new ApiError(401, "Token references a user that no longer exists");
