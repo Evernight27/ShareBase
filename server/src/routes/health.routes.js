@@ -5,12 +5,24 @@ const router = Router();
 
 const DB_STATES = ["disconnected", "connected", "connecting", "disconnecting"];
 
+// Prevent proxies / browsers from caching health responses — a stale
+// "degraded" verdict served to an orchestrator could keep an instance out
+// of rotation after it recovered, and the inverse is even worse.
+router.use((req, res, next) => {
+  res.set("Cache-Control", "no-store");
+  next();
+});
+
 // Liveness: is the process up?
 // Always 200 as long as the event loop is responsive. Use this for k8s
 // liveness probes / "is the container alive" checks — restarting the
 // container because Mongo went away briefly would just cause a cascade.
 router.get("/live", (req, res) => {
-  res.json({ status: "ok", uptime: process.uptime() });
+  res.json({
+    status: "ok",
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // Readiness: can we serve traffic right now?

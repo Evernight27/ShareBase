@@ -41,8 +41,19 @@ export const isTest = env.NODE_ENV === "test";
 export function assertRequiredEnv() {
   const missing = [];
   if (!env.ATLAS_URI) missing.push("ATLAS_URI");
-  // JWT_SECRET only required once auth lands in Phase 2, but warn early.
-  if (!env.JWT_SECRET && isProd) missing.push("JWT_SECRET");
+  // JWT_SECRET is unused until Phase 2 (auth) lands. We hard-require it
+  // in production so a deploy without it fails fast, and only print a
+  // soft warning in dev so the server still boots for local API work
+  // that doesn't need auth yet.
+  if (!env.JWT_SECRET) {
+    if (isProd) {
+      missing.push("JWT_SECRET");
+    } else {
+      console.warn(
+        "[startup] JWT_SECRET is not set. Auth routes (Phase 2+) will refuse to sign tokens.",
+      );
+    }
+  }
 
   if (missing.length) {
     throw new Error(
