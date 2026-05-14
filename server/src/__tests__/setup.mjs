@@ -7,7 +7,9 @@
 // login attempts in 15 minutes would start hitting 429s instead of the
 // behavior it actually wants to assert on.
 process.env.NODE_ENV = "test";
-process.env.JWT_SECRET = "test-secret-do-not-use-in-prod";
+// At least 32 chars so the JWT_SECRET length check in env.js doesn't
+// warn (or in prod, hard-fail) during tests.
+process.env.JWT_SECRET = "test-secret-do-not-use-in-prod-x".padEnd(64, "x");
 
 // ATLAS_URI uses `||=` — mongodb-memory-server sets the real URI in the
 // per-file `before` hook; this placeholder only exists so any module that

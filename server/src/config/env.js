@@ -38,20 +38,32 @@ export const isTest = env.NODE_ENV === "test";
  * Called from server.js before connecting / listening so we fail fast with a
  * readable message instead of crashing deep inside mongoose / jwt.
  */
+// OWASP guidance for HMAC secrets: at least 32 chars of entropy. Matches
+// the `randomBytes(64).toString('hex')` length the README recommends.
+const JWT_SECRET_MIN_LENGTH = 32;
+
 export function assertRequiredEnv() {
   const missing = [];
   if (!env.ATLAS_URI) missing.push("ATLAS_URI");
-  // JWT_SECRET is unused until Phase 2 (auth) lands. We hard-require it
-  // in production so a deploy without it fails fast, and only print a
-  // soft warning in dev so the server still boots for local API work
-  // that doesn't need auth yet.
+
+  // JWT_SECRET. Hard-require in production (a deploy without it is a
+  // misconfiguration); warn in dev so non-auth endpoints stay reachable
+  // for local exploration.
   if (!env.JWT_SECRET) {
     if (isProd) {
       missing.push("JWT_SECRET");
     } else {
       console.warn(
-        "[startup] JWT_SECRET is not set. Auth routes (Phase 2+) will refuse to sign tokens.",
+        "[startup] JWT_SECRET is not set. Auth routes will refuse to sign tokens.",
       );
+    }
+  } else if (env.JWT_SECRET.length < JWT_SECRET_MIN_LENGTH) {
+    // Weak secret: HS256 with a short key is trivially forgeable.
+    const detail = `JWT_SECRET (must be at least ${JWT_SECRET_MIN_LENGTH} characters; current length ${env.JWT_SECRET.length})`;
+    if (isProd) {
+      missing.push(detail);
+    } else {
+      console.warn(`[startup] ${detail}. Generate one with: node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`);
     }
   }
 
