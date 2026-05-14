@@ -46,11 +46,28 @@ npm start                  # plain node
 
 The API serves:
 
-- `GET /` — name + status JSON
-- `GET /api/health` — uptime + DB connection state
+- `GET /` — name + status JSON.
+- `GET /api/health/live` — liveness; always 200 as long as the process is up.
+  Wire this to k8s liveness probes / "is the container alive" checks.
+- `GET /api/health/ready` — readiness; 200 only when Mongo is connected,
+  otherwise 503 with `{ status: "degraded", db: "..." }`. Use this for
+  load-balancer health checks so an instance that lost its DB stops
+  receiving traffic.
+- `GET /api/health` — backwards-compatible combined check that mirrors
+  `/ready` (200 / 503).
 
 Domain routes (`/api/auth`, `/api/posts`, `/api/users`) get added in the
 phases described in [`PLAN.md`](./PLAN.md).
+
+## Tests
+
+A small smoke test exercises the routes, the centralized error handler,
+and the `res.headersSent` guard. Run it with:
+
+```bash
+cd server
+npm test
+```
 
 ## Environment variables
 
