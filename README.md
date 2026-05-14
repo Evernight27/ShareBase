@@ -36,6 +36,10 @@ ShareBase/
 
 ## Running the server locally
 
+Requires **Node ≥ 20** (the test runner uses Node's built-in test discovery,
+and the server uses `server.closeIdleConnections()` from 18.2+ during
+graceful shutdown).
+
 ```bash
 cd server
 cp .env.example .env       # then fill in ATLAS_URI and JWT_SECRET
