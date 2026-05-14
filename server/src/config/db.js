@@ -3,6 +3,24 @@ import env from "./env.js";
 
 mongoose.set("strictQuery", true);
 
+// Indexed by mongoose.connection.readyState; index 99 ("uninitialized") and
+// any future state fall back to "unknown" via the lookup helper below.
+const READY_STATE_LABELS = ["disconnected", "connected", "connecting", "disconnecting"];
+
+/**
+ * Snapshot of the mongoose connection's current readiness. Centralized here
+ * so callers (health routes, logging, future readiness gates) don't each
+ * reach into mongoose internals and re-map the state codes.
+ */
+export function getDbReadiness() {
+  const state = mongoose.connection.readyState;
+  return {
+    state,
+    label: READY_STATE_LABELS[state] ?? "unknown",
+    ready: state === 1,
+  };
+}
+
 /**
  * Connect to MongoDB Atlas using the URI from env.
  * Resolves with the active mongoose connection on success; the caller is

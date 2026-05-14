@@ -1,9 +1,8 @@
 import { Router } from "express";
-import mongoose from "mongoose";
+
+import { getDbReadiness } from "../config/db.js";
 
 const router = Router();
-
-const DB_STATES = ["disconnected", "connected", "connecting", "disconnecting"];
 
 // Prevent proxies / browsers from caching health responses — a stale
 // "degraded" verdict served to an orchestrator could keep an instance out
@@ -12,6 +11,19 @@ router.use((req, res, next) => {
   res.set("Cache-Control", "no-store");
   next();
 });
+
+// Build a readiness response body. Returned alongside `ready` so the
+// caller can pick the HTTP status (200 vs 503) without re-computing it.
+function readinessResponse({ withUptime = false } = {}) {
+  const { ready, label } = getDbReadiness();
+  const body = {
+    status: ready ? "ok" : "degraded",
+    db: label,
+    timestamp: new Date().toISOString(),
+  };
+  if (withUptime) body.uptime = process.uptime();
+  return { ready, body };
+}
 
 // Liveness: is the process up?
 // Always 200 as long as the event loop is responsive. Use this for k8s
@@ -30,28 +42,16 @@ router.get("/live", (req, res) => {
 // readiness probes / load balancer health checks so an instance that
 // lost its DB stops receiving traffic until it reconnects.
 router.get("/ready", (req, res) => {
-  const dbState = mongoose.connection.readyState;
-  const dbStatus = DB_STATES[dbState] ?? "unknown";
-  const ready = dbState === 1;
-  res.status(ready ? 200 : 503).json({
-    status: ready ? "ok" : "degraded",
-    db: dbStatus,
-    timestamp: new Date().toISOString(),
-  });
+  const { ready, body } = readinessResponse();
+  res.status(ready ? 200 : 503).json(body);
 });
 
 // Backwards-compatible combined check. Returns 200/503 like /ready so a
-// single endpoint still works for simple uptime monitors.
+// single endpoint still works for simple uptime monitors, with `uptime`
+// included for convenience.
 router.get("/", (req, res) => {
-  const dbState = mongoose.connection.readyState;
-  const dbStatus = DB_STATES[dbState] ?? "unknown";
-  const ready = dbState === 1;
-  res.status(ready ? 200 : 503).json({
-    status: ready ? "ok" : "degraded",
-    uptime: process.uptime(),
-    db: dbStatus,
-    timestamp: new Date().toISOString(),
-  });
+  const { ready, body } = readinessResponse({ withUptime: true });
+  res.status(ready ? 200 : 503).json(body);
 });
 
 export default router;
