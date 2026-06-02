@@ -197,3 +197,66 @@ test("getByUsername: response has no embedded followers/following arrays", async
   assert.equal(res.body.user.followers, undefined);
   assert.equal(res.body.user.following, undefined);
 });
+
+// --- Reserved usernames ----------------------------------------------
+
+test("signup: reserved usernames are rejected with per-field detail", async () => {
+  for (const reserved of ["search", "explore", "feed", "create", "admin", "api"]) {
+    const res = await request(app).post("/api/auth/signup").send({
+      username: reserved,
+      email: `${reserved}@example.com`,
+      password: "correcthorsebatterystaple",
+    });
+    assert.equal(res.status, 400, `expected 400 for reserved username "${reserved}"`);
+    assert.ok(res.body.error.details.username, "username field-level error expected");
+  }
+});
+
+test("signup: reserved username at the model layer also rejects (defense in depth)", async () => {
+  // Bypass the zod layer by writing directly to the model. The
+  // schema-level validate should still refuse it.
+  await assert.rejects(
+    () =>
+      User.create({
+        username: "search",
+        email: "viaModel@example.com",
+        password: "anyhash",
+      }),
+    /reserved/,
+  );
+});
+
+// --- viewerIsFollowing ------------------------------------------------
+
+test("getByUsername: viewerIsFollowing reflects current relationship for auth caller", async () => {
+  const alice = await signup({ username: "alice", email: "a@example.com" });
+  const bob = await signup({ username: "bob", email: "b@example.com" });
+
+  // Anonymous request — no viewer fields at all.
+  const anon = await request(app).get("/api/users/bob");
+  assert.equal(anon.body.user.viewerIsFollowing, undefined);
+  assert.equal(anon.body.user.isSelf, undefined);
+
+  // Authed alice viewing bob, not yet following.
+  const before = await request(app)
+    .get("/api/users/bob")
+    .set("Authorization", `Bearer ${alice.token}`);
+  assert.equal(before.body.user.viewerIsFollowing, false);
+  assert.equal(before.body.user.isSelf, false);
+
+  // Follow then re-check.
+  await request(app)
+    .post(`/api/users/${bob.user.id || bob.user._id}/follow`)
+    .set("Authorization", `Bearer ${alice.token}`);
+  const after = await request(app)
+    .get("/api/users/bob")
+    .set("Authorization", `Bearer ${alice.token}`);
+  assert.equal(after.body.user.viewerIsFollowing, true);
+
+  // Self-view: isSelf=true, viewerIsFollowing always false.
+  const selfView = await request(app)
+    .get("/api/users/alice")
+    .set("Authorization", `Bearer ${alice.token}`);
+  assert.equal(selfView.body.user.isSelf, true);
+  assert.equal(selfView.body.user.viewerIsFollowing, false);
+});

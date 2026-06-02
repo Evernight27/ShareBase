@@ -311,3 +311,100 @@ test("populated post.author does NOT leak email", async () => {
   const explore = await request(app).get("/api/posts/explore");
   assert.equal(explore.body.posts[0].author.email, undefined);
 });
+
+// --- savedBy privacy + viewer-derived fields -------------------------
+
+test("savedBy is NOT in the public Post response (privacy)", async () => {
+  const { token, user } = await signup();
+  const created = await createPostFixture(token, "hi");
+  const id = created.body.post._id || created.body.post.id;
+
+  // Alice saves her own post.
+  await request(app)
+    .post(`/api/posts/${id}/save`)
+    .set("Authorization", `Bearer ${token}`);
+
+  // Anonymous detail view must not expose the savedBy array.
+  const anon = await request(app).get(`/api/posts/${id}`);
+  assert.equal(anon.status, 200);
+  assert.equal(anon.body.post.savedBy, undefined, "savedBy must be private");
+
+  // Anonymous explore must not expose savedBy on any post either.
+  const explore = await request(app).get("/api/posts/explore");
+  for (const p of explore.body.posts) {
+    assert.equal(p.savedBy, undefined);
+  }
+
+  // The post create response (own viewer) gets the derived booleans
+  // but still no savedBy array.
+  assert.equal(created.body.post.savedBy, undefined);
+  // Discard `user` since we only used it implicitly through token.
+  void user;
+});
+
+test("viewerHasLiked / viewerHasSaved present for authed viewer, absent for anon", async () => {
+  const alice = await signup({ username: "alice", email: "a@example.com" });
+  const bob = await signup({ username: "bob", email: "b@example.com" });
+  const created = await createPostFixture(alice.token, "hi");
+  const id = created.body.post._id || created.body.post.id;
+
+  // Alice (the author) likes and saves her own post.
+  await request(app)
+    .post(`/api/posts/${id}/like`)
+    .set("Authorization", `Bearer ${alice.token}`);
+  await request(app)
+    .post(`/api/posts/${id}/save`)
+    .set("Authorization", `Bearer ${alice.token}`);
+
+  // Bob views as authed but hasn't liked or saved → both false.
+  const bobView = await request(app)
+    .get(`/api/posts/${id}`)
+    .set("Authorization", `Bearer ${bob.token}`);
+  assert.equal(bobView.body.post.viewerHasLiked, false);
+  assert.equal(bobView.body.post.viewerHasSaved, false);
+
+  // Alice views authed → both true.
+  const aliceView = await request(app)
+    .get(`/api/posts/${id}`)
+    .set("Authorization", `Bearer ${alice.token}`);
+  assert.equal(aliceView.body.post.viewerHasLiked, true);
+  assert.equal(aliceView.body.post.viewerHasSaved, true);
+
+  // Anon → fields entirely absent (no false-positive that would let an
+  // anonymous client think the booleans came from authority).
+  const anon = await request(app).get(`/api/posts/${id}`);
+  assert.equal(anon.body.post.viewerHasLiked, undefined);
+  assert.equal(anon.body.post.viewerHasSaved, undefined);
+});
+
+test("explore + feed include viewerHas* for authed viewer", async () => {
+  const alice = await signup({ username: "alice", email: "a@example.com" });
+  const created = await createPostFixture(alice.token, "hello");
+  const id = created.body.post._id || created.body.post.id;
+
+  await request(app)
+    .post(`/api/posts/${id}/like`)
+    .set("Authorization", `Bearer ${alice.token}`);
+
+  const explore = await request(app)
+    .get("/api/posts/explore")
+    .set("Authorization", `Bearer ${alice.token}`);
+  assert.equal(explore.body.posts[0].viewerHasLiked, true);
+  assert.equal(explore.body.posts[0].viewerHasSaved, false);
+
+  const feed = await request(app)
+    .get("/api/posts/feed")
+    .set("Authorization", `Bearer ${alice.token}`);
+  assert.equal(feed.body.posts[0].viewerHasLiked, true);
+});
+
+test("softAuth: a stale/forged token on a public read STILL returns 401, not silent anon", async () => {
+  // Verify softAuth doesn't swallow real auth errors. A public read
+  // with a forged token must surface as 401, not as an anonymous
+  // success — otherwise a client with a stale token would silently
+  // see the anonymous response and never know to log out.
+  const res = await request(app)
+    .get("/api/posts/explore")
+    .set("Authorization", "Bearer not.a.valid.jwt");
+  assert.equal(res.status, 401);
+});
