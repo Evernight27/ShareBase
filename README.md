@@ -2,47 +2,63 @@
 
 Instagram-style social app built on the MERN stack.
 
-> Status: **active development**. Phases 1–2 are done — the backend
-> foundation is in place and the auth surface (signup / login / me) is
-> live with JWT, bcrypt password hashing, per-IP rate limiting, and a
-> Zod-validated request layer. Uploads and the React client land in
-> Phases 3–5. See [`PLAN.md`](./PLAN.md) for the full roadmap.
+> Status: **active development**. Phases 1–3 are landed — the backend
+> foundation, the auth surface (signup / login / me) with JWT, bcrypt,
+> per-IP rate limiting, and zod-validated requests, **plus** the
+> posts / users domain routes (image upload via Cloudinary, likes,
+> saves, comments, follows). The Vite + React + Tailwind client is in
+> [`client/`](./client). See
+> [`docs/PROJECT_ROADMAP.md`](./docs/PROJECT_ROADMAP.md) for the full
+> roadmap.
 
 ## Tech stack
 
 - **Server:** Node.js + Express, Mongoose (MongoDB Atlas), Helmet, Morgan,
   CORS, dotenv, **bcryptjs + jsonwebtoken** for auth, **zod** for request
-  validation, **express-rate-limit** for credential-touching endpoints.
-  Multer + Cloudinary image uploads land in Phase 3.
-- **Client:** Vite + React 18 + Tailwind + React Query (added in Phase 5).
+  validation, **express-rate-limit** for credential-touching endpoints,
+  **multer + cloudinary** for image uploads.
+- **Client:** Vite + React 19 + Tailwind v4 + React Router 7.
 - **Database:** MongoDB Atlas. Tests use `mongodb-memory-server`.
 
 ## Repo layout
 
 ```
 ShareBase/
-├── PLAN.md              Multi-phase roadmap for the project
-├── server/              Express API
-│   ├── server.js        Entry: validates env, connects DB, starts HTTP server
+├── docs/
+│   └── PROJECT_ROADMAP.md    Multi-phase roadmap for the project
+├── server/                   Express API
+│   ├── server.js             Entry: validates env, connects DB, starts HTTP
 │   ├── src/
-│   │   ├── app.js              Express app (middleware + routes, no listen)
-│   │   ├── config/             env.js, db.js
-│   │   ├── models/             User.js, Post.js, Comment.js (Phase 3 uses Post/Comment)
-│   │   ├── middleware/         auth.js (protect), error.js, validate.js (zod)
-│   │   ├── controllers/        auth.controller.js
-│   │   ├── routes/             auth.routes.js, health.routes.js
-│   │   ├── utils/              asyncHandler.js, ApiError.js, jwt.js
-│   │   └── __tests__/          setup.mjs, smoke.test.mjs, auth.test.mjs
-│   ├── .env.example     Copy to .env and fill in
+│   │   ├── app.js            Express app (middleware + routes, no listen)
+│   │   ├── config/           env.js, db.js
+│   │   ├── models/           User, Post, Comment, Follow
+│   │   ├── middleware/       auth (protect), error, validate (zod), upload (multer)
+│   │   ├── controllers/      auth, posts, users
+│   │   ├── routes/           auth, health, posts, users
+│   │   ├── services/         cloudinary
+│   │   ├── utils/            asyncHandler, ApiError, jwt
+│   │   └── __tests__/        setup, smoke, auth, posts, users
+│   ├── .env.example          Copy to .env and fill in
 │   └── package.json
-└── client/              (added in Phase 5)
+└── client/                   React + Vite + Tailwind UI
+    ├── index.html
+    ├── src/
+    │   ├── main.jsx, App.jsx, index.css
+    │   ├── api/client.js     fetch wrapper, JWT, error envelope
+    │   ├── auth/             AuthProvider, authContext (useAuth)
+    │   ├── components/       Layout, ProtectedRoute, PostCard, PostGrid, EmptyState
+    │   ├── hooks/            useApiResource (load + cache fetches)
+    │   └── pages/            HomeFeed, Explore, CreatePost, PostDetail,
+    │                         Profile, Login, Register, NotFound
+    └── package.json
 ```
 
 ## Running the server locally
 
-Requires **Node ≥ 20** (the test runner uses Node's built-in test discovery,
-and the server uses `server.closeIdleConnections()` from 18.2+ during
-graceful shutdown).
+Requires **Node ≥ 20** (the test runner uses Node's built-in test
+discovery, and the server uses `server.closeIdleConnections()` from
+18.2+ during graceful shutdown). Test runs use Node's
+`--experimental-test-module-mocks` flag (Node 22+ recommended).
 
 ```bash
 cd server
@@ -53,71 +69,102 @@ npm run dev                # nodemon
 npm start                  # plain node
 ```
 
-The API serves:
+## Running the client locally
+
+```bash
+cd client
+cp .env.example .env       # defaults already point at http://localhost:5050/api
+npm install
+npm run dev                # vite dev server on http://localhost:5173
+```
+
+## API surface
+
+All error responses share the
+`{ error: { message, details? } }` envelope.
+
+### Health
 
 - `GET /` — name + status JSON.
-- `GET /api/health/live` — liveness; always 200 as long as the process is up.
-- `GET /api/health/ready` — readiness; 200 only when Mongo is connected,
-  otherwise 503 with `{ status: "degraded", db: "..." }`.
+- `GET /api/health/live` — always 200 while the process is up.
+- `GET /api/health/ready` — 200 when Mongo is connected, 503 otherwise.
 - `GET /api/health` — back-compat combined check that mirrors `/ready`.
 
 ### Auth (Phase 2)
 
-All three endpoints return errors in the shared
-`{ error: { message, details? } }` envelope.
-
-- `POST /api/auth/signup` — body: `{ username, email, password, name? }`.
-  201 → `{ token, user }`. 400 on validation, 409 on duplicate
-  username/email with a per-field `details` hint.
-- `POST /api/auth/login` — body: `{ identifier, password }`. `identifier`
-  matches either email or username (case-insensitive). 200 → `{ token, user }`.
-  401 with the generic `"Invalid credentials"` for both unknown user and
-  wrong password (so the endpoint doesn't double as an existence oracle).
-- `GET /api/auth/me` — requires `Authorization: Bearer <token>`. 200 →
-  `{ user }`. 401 for missing / malformed / invalid / expired / orphan
-  tokens.
+- `POST /api/auth/signup` — `{ username, email, password, name? }` → 201 `{ token, user }`.
+- `POST /api/auth/login` — `{ identifier, password }` (identifier = email or username) → 200 `{ token, user }`.
+- `GET /api/auth/me` — `Authorization: Bearer <token>` → 200 `{ user }`.
 
 Signup and login are behind a per-IP rate limiter (20 requests / 15 min)
 disabled in `NODE_ENV=test`.
 
-Future domain routes (`/api/posts`, `/api/users`) land in Phases 3–4.
+### Posts (Phase 3)
+
+- `GET /api/posts/explore` — public, paginated newest-first.
+- `GET /api/posts/feed` — auth, posts from followed users + self.
+- `GET /api/posts/user/:username` — public, posts authored by that user.
+- `GET /api/posts/:id` — public, post detail with populated author / comments.
+- `POST /api/posts` — auth, multipart `image` + `caption` → uploads to Cloudinary.
+- `PATCH /api/posts/:id` — auth, edit caption (author only).
+- `DELETE /api/posts/:id` — auth, deletes post + comments + Cloudinary asset (author only).
+- `POST /api/posts/:id/like`, `DELETE /api/posts/:id/like` — auth, idempotent.
+- `POST /api/posts/:id/save`, `DELETE /api/posts/:id/save` — auth, idempotent.
+- `POST /api/posts/:id/comments` — auth, `{ text }`.
+- `DELETE /api/posts/:id/comments/:commentId` — auth (comment author only).
+
+### Users (Phase 4)
+
+- `GET /api/users/search?q=` — public, prefix-match on username.
+- `GET /api/users/:username` — public, profile + `{ posts, followers, following }` counts.
+- `PATCH /api/users/me` — auth, update `name`, `bio`, `avatarUrl`.
+- `POST /api/users/:id/follow`, `DELETE /api/users/:id/follow` — auth, idempotent.
 
 ## Tests
 
-`npm test` runs the `node:test` suite — **30 assertions** across two
-files:
+`npm test` (in `server/`) runs the `node:test` suite — **56 tests
+across four files**:
 
-- `smoke.test.mjs` — the real routes (`/`, three health endpoints with
-  `Cache-Control: no-store`, 404 path) and the centralized error handler
-  envelope mapping for `ApiError`, Mongoose `ValidationError` /
-  duplicate-key (`11000`) / `CastError`, and the `res.headersSent` guard.
-- `auth.test.mjs` — full signup → login → me flow against an in-process
-  `mongodb-memory-server`, plus negative paths: validation errors,
-  duplicate username, duplicate email, wrong password, unknown user,
-  case-insensitive identifier, expired token, tampered token, orphan
-  token, malformed Authorization header.
+- `smoke.test.mjs` — real routes (`/`, three health endpoints with
+  `Cache-Control: no-store`, 404 path) and the centralized error
+  handler envelope mapping (`ApiError`, Mongoose `ValidationError` /
+  `11000` / `CastError`, `res.headersSent` guard).
+- `auth.test.mjs` — full signup → login → me flow against
+  `mongodb-memory-server`, plus negative paths.
+- `posts.test.mjs` — explore / create / get-by-id / like / save /
+  comments / delete-permissions, with Cloudinary module-mocked.
+- `users.test.mjs` — search, profile + stats, profile patch, follow /
+  unfollow + follower counts.
 
 ```bash
 cd server
 npm test
 ```
 
-`npm test` is `node --import ./src/__tests__/setup.mjs --test`. The
-setup file seeds `NODE_ENV=test` and a test `JWT_SECRET` before any
-imports; Node's built-in `--test` discovery picks up
-`**/*.test.{js,mjs,cjs}` under the package and skips `node_modules`.
+The setup file (`__tests__/setup.mjs`) seeds `NODE_ENV=test` and a test
+`JWT_SECRET` before any imports; the `--experimental-test-module-mocks`
+flag enables `mock.module` for the Cloudinary stub used by the posts
+suite.
 
 ## Environment variables
 
-See [`server/.env.example`](./server/.env.example). Required for boot:
+See [`server/.env.example`](./server/.env.example) and
+[`client/.env.example`](./client/.env.example).
 
-- `ATLAS_URI` — MongoDB Atlas connection string. The server refuses to
-  start without it.
-- `JWT_SECRET` — used by the auth routes from Phase 2 on. Production
-  hard-fails without it; dev prints a warning and keeps booting so
-  non-auth endpoints stay reachable.
+Required for the server to boot:
 
-Generate a secret for local dev with:
+- `ATLAS_URI` — MongoDB Atlas connection string.
+- `JWT_SECRET` — used by the auth routes. Production hard-fails without
+  it; dev prints a warning and keeps booting so non-auth endpoints stay
+  reachable. Must be at least 32 characters.
+
+Cloudinary is optional (uploads return 503 if unconfigured), but the
+three keys are an all-or-nothing group:
+
+- `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`,
+  `CLOUDINARY_FOLDER` (defaults to `sharebase`).
+
+Generate a JWT secret for local dev with:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
