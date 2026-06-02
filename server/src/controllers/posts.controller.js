@@ -13,9 +13,8 @@ import asyncHandler from "../utils/asyncHandler.js";
 // --- Helpers -----------------------------------------------------------
 
 // Centralize the populate shape so feed / explore / detail render the
-// same fields. A bare `populate("author")` would leak the password
-// hash via `select: false` defaults if the schema were ever changed,
-// so we project explicitly.
+// same fields and a future User schema change can't accidentally
+// pull a private field through the `author` populate.
 function populatePost(query) {
   return query
     .populate("author", "username avatarUrl name")
@@ -24,6 +23,35 @@ function populatePost(query) {
       options: { sort: { createdAt: -1 }, limit: 20 },
       populate: { path: "author", select: "username avatarUrl" },
     });
+}
+
+/**
+ * Serialize a single Post for JSON output, augmented with two derived
+ * booleans when there's a viewer:
+ *
+ *   - `viewerHasLiked`  — does the viewer's id appear in `likes`?
+ *   - `viewerHasSaved`  — does it appear in `savedBy`?
+ *
+ * The Post schema's toJSON transform already strips `savedBy` (it's
+ * private; surfacing who bookmarked a post would leak that), so the
+ * client cannot derive `viewerHasSaved` itself — these booleans are
+ * the only honest way to render an "I saved this" indicator without
+ * publishing every other user's bookmarks.
+ *
+ * `viewerId` should be a Mongoose ObjectId or null. When null, neither
+ * field is added so anonymous responses stay minimal.
+ */
+function serializePostForViewer(post, viewerId) {
+  const json = post.toJSON();
+  if (viewerId) {
+    json.viewerHasLiked = post.likes.some((id) => id.equals(viewerId));
+    json.viewerHasSaved = post.savedBy.some((id) => id.equals(viewerId));
+  }
+  return json;
+}
+
+function serializePostsForViewer(posts, viewerId) {
+  return posts.map((p) => serializePostForViewer(p, viewerId));
 }
 
 function parseObjectIdParam(value, name) {
@@ -78,7 +106,10 @@ export const explore = asyncHandler(async (req, res) => {
   const posts = await populatePost(
     Post.find({}).sort({ createdAt: -1 }).skip(skip).limit(limit),
   );
-  res.json({ posts, pagination: { page, limit } });
+  res.json({
+    posts: serializePostsForViewer(posts, req.user?._id ?? null),
+    pagination: { page, limit },
+  });
 });
 
 export const feed = asyncHandler(async (req, res) => {
@@ -98,7 +129,10 @@ export const feed = asyncHandler(async (req, res) => {
       .skip(skip)
       .limit(limit),
   );
-  res.json({ posts, pagination: { page, limit } });
+  res.json({
+    posts: serializePostsForViewer(posts, req.user._id),
+    pagination: { page, limit },
+  });
 });
 
 export const listByUsername = asyncHandler(async (req, res) => {
@@ -113,14 +147,17 @@ export const listByUsername = asyncHandler(async (req, res) => {
       .skip(skip)
       .limit(limit),
   );
-  res.json({ posts, pagination: { page, limit } });
+  res.json({
+    posts: serializePostsForViewer(posts, req.user?._id ?? null),
+    pagination: { page, limit },
+  });
 });
 
 export const getById = asyncHandler(async (req, res) => {
   parseObjectIdParam(req.params.id, "post id");
   const post = await populatePost(Post.findById(req.params.id));
   if (!post) throw new ApiError(404, "Post not found");
-  res.json({ post });
+  res.json({ post: serializePostForViewer(post, req.user?._id ?? null) });
 });
 
 // --- Write handlers ----------------------------------------------------
@@ -151,7 +188,7 @@ export const create = asyncHandler(async (req, res) => {
   }
 
   const populated = await populatePost(Post.findById(post._id));
-  res.status(201).json({ post: populated });
+  res.status(201).json({ post: serializePostForViewer(populated, req.user._id) });
 });
 
 export const update = asyncHandler(async (req, res) => {
@@ -164,7 +201,7 @@ export const update = asyncHandler(async (req, res) => {
   if ("caption" in req.body) post.caption = req.body.caption;
   await post.save();
   const populated = await populatePost(Post.findById(post._id));
-  res.json({ post: populated });
+  res.json({ post: serializePostForViewer(populated, req.user._id) });
 });
 
 export const remove = asyncHandler(async (req, res) => {

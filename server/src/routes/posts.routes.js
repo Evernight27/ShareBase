@@ -18,7 +18,7 @@ import {
   update,
   updatePostSchema,
 } from "../controllers/posts.controller.js";
-import { protect } from "../middleware/auth.js";
+import { protect, softAuth } from "../middleware/auth.js";
 import { imageUpload, multerErrorHandler } from "../middleware/upload.js";
 import validate from "../middleware/validate.js";
 
@@ -31,9 +31,11 @@ const router = Router();
 // validation as "Invalid post id" instead of returning the user's
 // feed.
 
-// Public reads.
-router.get("/explore", explore);
-router.get("/user/:username", listByUsername);
+// Public reads, with softAuth so a logged-in caller still gets the
+// `viewerHasLiked` / `viewerHasSaved` derived fields without making
+// auth mandatory for unauthenticated browsing.
+router.get("/explore", softAuth, explore);
+router.get("/user/:username", softAuth, listByUsername);
 
 // Authenticated reads.
 router.get("/feed", protect, feed);
@@ -52,7 +54,7 @@ router.post(
 
 // Parameterized routes — registered last so the literal-segment routes
 // above take precedence on the segments they own.
-router.get("/:id", getById);
+router.get("/:id", softAuth, getById);
 router.patch("/:id", protect, validate(updatePostSchema), update);
 router.delete("/:id", protect, remove);
 

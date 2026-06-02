@@ -26,24 +26,41 @@ export const updateProfileSchema = z
 // --- Helpers -----------------------------------------------------------
 
 /**
- * Build the profile envelope returned by both the public
- * `GET /:username` lookup and the private `PATCH /me` confirmation.
+ * Build the profile envelope returned by the public `GET /:username`
+ * lookup and the private `PATCH /me` confirmation.
  *
  * `serialize` selects between the safe (public) shape — `toJSON()`,
  * which strips `password` AND `email` — and the private shape —
  * `toPrivateJSON()`, which includes the requester's own email.
  *
+ * `viewerId` (when present) adds a `viewerIsFollowing` boolean so the
+ * client can render a follow/unfollow button without a second
+ * round-trip. Always `false` for self-views (you can't follow
+ * yourself, and the field would be misleading otherwise).
+ *
  * Stats always come from the Follow + Post collections; the model has
  * no embedded follow arrays.
  */
-async function buildProfileResponse(user, { serialize = "public" } = {}) {
-  const [postsCount, followersCount, followingCount] = await Promise.all([
+async function buildProfileResponse(user, { serialize = "public", viewerId = null } = {}) {
+  const isSelf = viewerId ? user._id.equals(viewerId) : false;
+
+  const baseQueries = [
     Post.countDocuments({ author: user._id }),
     Follow.countDocuments({ following: user._id }),
     Follow.countDocuments({ follower: user._id }),
+  ];
+  const followingCheck =
+    viewerId && !isSelf
+      ? Follow.exists({ follower: viewerId, following: user._id })
+      : Promise.resolve(null);
+
+  const [postsCount, followersCount, followingCount, followingDoc] = await Promise.all([
+    ...baseQueries,
+    followingCheck,
   ]);
+
   const base = serialize === "private" ? user.toPrivateJSON() : user.toJSON();
-  return {
+  const result = {
     ...base,
     stats: {
       posts: postsCount,
@@ -51,6 +68,14 @@ async function buildProfileResponse(user, { serialize = "public" } = {}) {
       following: followingCount,
     },
   };
+
+  if (viewerId) {
+    // Self never has a follow relationship to themselves.
+    result.viewerIsFollowing = !isSelf && Boolean(followingDoc);
+    result.isSelf = isSelf;
+  }
+
+  return result;
 }
 
 function parseObjectIdParam(value, name) {
@@ -90,7 +115,12 @@ export const search = asyncHandler(async (req, res) => {
 export const getByUsername = asyncHandler(async (req, res) => {
   const user = await User.findOne({ username: req.params.username.toLowerCase() });
   if (!user) throw new ApiError(404, "User not found");
-  res.json({ user: await buildProfileResponse(user, { serialize: "public" }) });
+  res.json({
+    user: await buildProfileResponse(user, {
+      serialize: "public",
+      viewerId: req.user?._id ?? null,
+    }),
+  });
 });
 
 export const updateMe = asyncHandler(async (req, res) => {
@@ -100,7 +130,12 @@ export const updateMe = asyncHandler(async (req, res) => {
   }
   await req.user.save();
   // Own profile — return the private serialization including email.
-  res.json({ user: await buildProfileResponse(req.user, { serialize: "private" }) });
+  res.json({
+    user: await buildProfileResponse(req.user, {
+      serialize: "private",
+      viewerId: req.user._id,
+    }),
+  });
 });
 
 export const follow = asyncHandler(async (req, res) => {

@@ -16,12 +16,23 @@ const postSchema = new mongoose.Schema(
     likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User", index: true }],
     // Users who bookmarked this post. Distinct from `likes` (a like is a
     // public reaction; a save is a private "remember this for later").
+    // The schema transform below STRIPS this from JSON output —
+    // returning it would tell anyone who looks at a post which other
+    // users have privately bookmarked it. The posts controller
+    // surfaces a `viewerHasSaved: boolean` derived field for the
+    // requester instead.
     savedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     comments: [{ type: mongoose.Schema.Types.ObjectId, ref: "Comment" }],
   },
   {
     timestamps: true,
-    toJSON: { versionKey: false },
+    toJSON: {
+      versionKey: false,
+      transform: (_doc, ret) => {
+        delete ret.savedBy;
+        return ret;
+      },
+    },
   },
 );
 
