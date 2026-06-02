@@ -40,17 +40,27 @@ const userSchema = new mongoose.Schema(
     name: { type: String, trim: true, default: "", maxlength: 50 },
     bio: { type: String, trim: true, default: "", maxlength: 200 },
     avatarUrl: { type: String, default: "" },
-    followers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-    following: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    // The follow graph is stored in the Follow collection, not here, so
+    // it scales past the 16 MB document limit. The previous embedded
+    // followers/following arrays were unused dead state and have been
+    // removed.
   },
   {
     timestamps: true,
     toJSON: {
       versionKey: false,
       transform: (_doc, ret) => {
-        // Defensive: in case a query accidentally pulled `password`, it
-        // must never appear in a JSON response.
+        // Two privacy-sensitive fields. `password` is `select:false` so
+        // it usually isn't loaded, but the transform is the
+        // single-source-of-truth and the cheapest insurance against a
+        // future query that pulls it explicitly. `email` is treated as
+        // private-by-default — the public profile (`GET /api/users/...`)
+        // and populated `author` payloads on posts must not leak it to
+        // anonymous visitors. Endpoints that legitimately need to
+        // return the requester's own email use `toPrivateJSON()`
+        // explicitly.
         delete ret.password;
+        delete ret.email;
         return ret;
       },
     },
@@ -70,8 +80,19 @@ userSchema.methods.comparePassword = function comparePassword(candidate) {
   return bcrypt.compare(candidate, this.password);
 };
 
-// Convenience: clean projection for "the public shape of a user".
-userSchema.statics.publicFields = "username email name bio avatarUrl followers following createdAt";
+/**
+ * Same as `toJSON()` but additionally includes the requester's own
+ * email. Use only on responses where the caller IS the user being
+ * serialized — `/api/auth/{signup,login,me}` and the `PATCH
+ * /api/users/me` confirmation. Everywhere else (public profile, search
+ * results, populated authors) must call `toJSON()` so email doesn't
+ * leak.
+ */
+userSchema.methods.toPrivateJSON = function toPrivateJSON() {
+  const json = this.toJSON();
+  json.email = this.email;
+  return json;
+};
 
 const User = mongoose.models.User || mongoose.model("User", userSchema);
 

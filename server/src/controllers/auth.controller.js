@@ -43,8 +43,9 @@ export const loginSchema = z.object({
 
 function authResponse(user) {
   const token = signToken(user._id);
-  // toJSON() runs the schema transform that strips `password`.
-  return { token, user: user.toJSON() };
+  // toPrivateJSON includes the requester's own email; the schema
+  // transform always strips password.
+  return { token, user: user.toPrivateJSON() };
 }
 
 // --- Handlers ----------------------------------------------------------
@@ -112,8 +113,9 @@ export const login = asyncHandler(async (req, res) => {
 });
 
 export const me = asyncHandler(async (req, res) => {
-  // `protect` already loaded the user and password is select:false, so
-  // toJSON()'s transform doesn't have anything to strip — but the
-  // transform is the single source of truth either way.
-  res.json({ user: req.user.toJSON() });
+  // `/me` returns the requester's own user, so it gets the
+  // private serialization that includes email. `protect` already
+  // loaded the user; password is `select:false` so the schema
+  // transform has nothing to strip on the typical path.
+  res.json({ user: req.user.toPrivateJSON() });
 });

@@ -5,9 +5,9 @@ import mongoose from "mongoose";
 // on User would eventually hit, and lets the follow graph be queried
 // efficiently with the indexes below.
 //
-// The User model still carries legacy `followers`/`following` arrays
-// for backwards compatibility, but new follow operations are written
-// here exclusively. User-route counts derive from this collection.
+// The Follow collection is the single source of truth for the follow
+// graph; the User schema does not carry embedded follower/following
+// arrays. Profile stats derive from `Follow.countDocuments(...)`.
 const followSchema = new mongoose.Schema(
   {
     follower: {

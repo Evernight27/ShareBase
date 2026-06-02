@@ -25,14 +25,26 @@ export const updateProfileSchema = z
 
 // --- Helpers -----------------------------------------------------------
 
-async function buildProfileResponse(user) {
+/**
+ * Build the profile envelope returned by both the public
+ * `GET /:username` lookup and the private `PATCH /me` confirmation.
+ *
+ * `serialize` selects between the safe (public) shape — `toJSON()`,
+ * which strips `password` AND `email` — and the private shape —
+ * `toPrivateJSON()`, which includes the requester's own email.
+ *
+ * Stats always come from the Follow + Post collections; the model has
+ * no embedded follow arrays.
+ */
+async function buildProfileResponse(user, { serialize = "public" } = {}) {
   const [postsCount, followersCount, followingCount] = await Promise.all([
     Post.countDocuments({ author: user._id }),
     Follow.countDocuments({ following: user._id }),
     Follow.countDocuments({ follower: user._id }),
   ]);
+  const base = serialize === "private" ? user.toPrivateJSON() : user.toJSON();
   return {
-    ...user.toJSON(),
+    ...base,
     stats: {
       posts: postsCount,
       followers: followersCount,
@@ -54,6 +66,10 @@ function parseObjectIdParam(value, name) {
 // on `username` can be used. Caller-supplied input goes through a
 // strict regex-escape so a query like `.*` doesn't turn into a full
 // scan or worse.
+//
+// Result shape is the public projection (no email, no password) plus
+// `name` and `avatarUrl` so a search dropdown can render an avatar +
+// display name without a follow-up profile fetch.
 export const search = asyncHandler(async (req, res) => {
   const raw = String(req.query.q || "").trim().toLowerCase();
   if (!raw) {
@@ -62,15 +78,19 @@ export const search = asyncHandler(async (req, res) => {
   }
   const safe = raw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const users = await User.find({ username: { $regex: `^${safe}` } })
+    .select("username name avatarUrl bio")
     .sort({ username: 1 })
     .limit(10);
+  // The explicit projection above already excludes email/password, but
+  // we still go through `toJSON()` to keep the response shape (stripped
+  // versionKey, etc.) consistent with the rest of the API.
   res.json({ users: users.map((u) => u.toJSON()) });
 });
 
 export const getByUsername = asyncHandler(async (req, res) => {
   const user = await User.findOne({ username: req.params.username.toLowerCase() });
   if (!user) throw new ApiError(404, "User not found");
-  res.json({ user: await buildProfileResponse(user) });
+  res.json({ user: await buildProfileResponse(user, { serialize: "public" }) });
 });
 
 export const updateMe = asyncHandler(async (req, res) => {
@@ -79,7 +99,8 @@ export const updateMe = asyncHandler(async (req, res) => {
     if (field in req.body) req.user[field] = req.body[field];
   }
   await req.user.save();
-  res.json({ user: await buildProfileResponse(req.user) });
+  // Own profile — return the private serialization including email.
+  res.json({ user: await buildProfileResponse(req.user, { serialize: "private" }) });
 });
 
 export const follow = asyncHandler(async (req, res) => {
