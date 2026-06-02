@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel an in-flight CI run when a new commit lands on the same ref.
+# Saves runner minutes on rapid pushes; the latest run is what matters.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: server (test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Node 22 is needed for --experimental-test-module-mocks,
+          # which the Cloudinary mock in posts.test.mjs relies on.
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Run tests
+        # The test runner spins up an in-process mongodb-memory-server
+        # per test file; no external services or credentials needed.
+        run: npm test
+
+  client:
+    name: client (lint + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: client/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Build
+        # `vite build` doesn't need any env vars — VITE_API_BASE_URL
+        # has a runtime fallback. Catches type/import errors and
+        # accidental TS-only syntax slipping into .jsx files.
+        run: npm run build

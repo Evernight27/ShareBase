@@ -92,7 +92,7 @@ All error responses share the
 
 ### Auth (Phase 2)
 
-- `POST /api/auth/signup` — `{ username, email, password, name? }` → 201 `{ token, user }`.
+- `POST /api/auth/signup` — `{ username, email, password, name? }` → 201 `{ token, user }`. Usernames must match `^[a-z0-9._]{3,30}$` and may not be a reserved router segment (`me`, `search`, `explore`, `feed`, `create`, `accounts`, `admin`, etc.).
 - `POST /api/auth/login` — `{ identifier, password }` (identifier = email or username) → 200 `{ token, user }`.
 - `GET /api/auth/me` — `Authorization: Bearer <token>` → 200 `{ user }`.
 
@@ -101,10 +101,10 @@ disabled in `NODE_ENV=test`.
 
 ### Posts (Phase 3)
 
-- `GET /api/posts/explore` — public, paginated newest-first.
+- `GET /api/posts/explore` — public, paginated newest-first. Authenticated callers (`Authorization: Bearer`) additionally get `viewerHasLiked` / `viewerHasSaved` booleans on each post.
 - `GET /api/posts/feed` — auth, posts from followed users + self.
 - `GET /api/posts/user/:username` — public, posts authored by that user.
-- `GET /api/posts/:id` — public, post detail with populated author / comments.
+- `GET /api/posts/:id` — public, post detail with populated author / comments. `viewerHasLiked` / `viewerHasSaved` populated for authed callers. `savedBy` is intentionally NOT in the response — bookmarks are private.
 - `POST /api/posts` — auth, multipart `image` + `caption` → uploads to Cloudinary.
 - `PATCH /api/posts/:id` — auth, edit caption (author only).
 - `DELETE /api/posts/:id` — auth, deletes post + comments + Cloudinary asset (author only).
@@ -116,13 +116,13 @@ disabled in `NODE_ENV=test`.
 ### Users (Phase 4)
 
 - `GET /api/users/search?q=` — public, prefix-match on username.
-- `GET /api/users/:username` — public, profile + `{ posts, followers, following }` counts.
+- `GET /api/users/:username` — public, profile + `{ posts, followers, following }` counts. Authed callers also get `viewerIsFollowing` and `isSelf` booleans for follow-button state.
 - `PATCH /api/users/me` — auth, update `name`, `bio`, `avatarUrl`.
 - `POST /api/users/:id/follow`, `DELETE /api/users/:id/follow` — auth, idempotent.
 
 ## Tests
 
-`npm test` (in `server/`) runs the `node:test` suite — **56 tests
+`npm test` (in `server/`) runs the `node:test` suite — **72 tests
 across four files**:
 
 - `smoke.test.mjs` — real routes (`/`, three health endpoints with
