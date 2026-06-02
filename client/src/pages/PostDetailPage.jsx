@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { apiRequest } from '../api/client.js'
 import { useAuth } from '../auth/authContext.js'
 import EmptyState from '../components/EmptyState.jsx'
@@ -7,19 +7,25 @@ import useApiResource from '../hooks/useApiResource.js'
 
 export default function PostDetailPage() {
   const { postId } = useParams()
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, user } = useAuth()
+  const navigate = useNavigate()
   const { data, error, isLoading, refetch } = useApiResource(`/posts/${postId}`)
   const post = data?.post
   const author = post?.author || {}
   const postIdValue = post?._id || post?.id
 
+  const viewerId = user?.id || user?._id || null
+  const isPostAuthor = Boolean(viewerId && author && (author._id === viewerId || author.id === viewerId))
+
   const [isLikeMutating, setIsLikeMutating] = useState(false)
   const [isSaveMutating, setIsSaveMutating] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [actionError, setActionError] = useState('')
 
   const [commentText, setCommentText] = useState('')
   const [isCommentSubmitting, setIsCommentSubmitting] = useState(false)
   const [commentError, setCommentError] = useState('')
+  const [deletingCommentId, setDeletingCommentId] = useState(null)
 
   async function toggleLike() {
     if (!post || !postIdValue || isLikeMutating) return
@@ -50,6 +56,36 @@ export default function PostDetailPage() {
       setActionError(err.message)
     } finally {
       setIsSaveMutating(false)
+    }
+  }
+
+  async function deletePost() {
+    if (!post || !postIdValue || isDeleting) return
+    if (!window.confirm('Delete this post? This cannot be undone.')) return
+    setIsDeleting(true)
+    setActionError('')
+    try {
+      await apiRequest(`/posts/${postIdValue}`, { method: 'DELETE' })
+      // The post is gone — bounce to the author's profile rather than
+      // staying on a 404'd detail page.
+      navigate(author.username ? `/${author.username}` : '/', { replace: true })
+    } catch (err) {
+      setActionError(err.message)
+      setIsDeleting(false)
+    }
+  }
+
+  async function deleteComment(commentId) {
+    if (!postIdValue || !commentId || deletingCommentId) return
+    setDeletingCommentId(commentId)
+    setCommentError('')
+    try {
+      await apiRequest(`/posts/${postIdValue}/comments/${commentId}`, { method: 'DELETE' })
+      await refetch()
+    } catch (err) {
+      setCommentError(err.message)
+    } finally {
+      setDeletingCommentId(null)
     }
   }
 
@@ -85,9 +121,21 @@ export default function PostDetailPage() {
             className="max-h-[70vh] w-full object-contain bg-neutral-100"
           />
           <div className="space-y-4 p-5">
-            <Link to={`/${author.username}`} className="font-semibold">
-              @{author.username}
-            </Link>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <Link to={`/${author.username}`} className="font-semibold">
+                @{author.username}
+              </Link>
+              {isPostAuthor ? (
+                <button
+                  type="button"
+                  onClick={deletePost}
+                  disabled={isDeleting}
+                  className="rounded-full border border-red-300 px-3 py-1.5 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+                >
+                  {isDeleting ? 'Deleting...' : 'Delete post'}
+                </button>
+              ) : null}
+            </div>
             {post.caption ? <p className="text-neutral-700">{post.caption}</p> : null}
 
             {/* Like / save controls. Disabled (read-only label) for
@@ -141,14 +189,29 @@ export default function PostDetailPage() {
               <h2 className="font-semibold">Comments</h2>
               {post.comments?.length ? (
                 <ul className="mt-3 space-y-3">
-                  {post.comments.map((comment) => (
-                    <li key={comment._id || comment.id} className="text-sm">
-                      <Link to={`/${comment.author?.username}`} className="font-semibold">
-                        @{comment.author?.username}
-                      </Link>{' '}
-                      {comment.text}
-                    </li>
-                  ))}
+                  {post.comments.map((comment) => {
+                    const cid = comment._id || comment.id
+                    const cAuthorId = comment.author?._id || comment.author?.id
+                    const isCommentAuthor = Boolean(viewerId && cAuthorId && cAuthorId === viewerId)
+                    return (
+                      <li key={cid} className="text-sm">
+                        <Link to={`/${comment.author?.username}`} className="font-semibold">
+                          @{comment.author?.username}
+                        </Link>{' '}
+                        {comment.text}
+                        {isCommentAuthor ? (
+                          <button
+                            type="button"
+                            onClick={() => deleteComment(cid)}
+                            disabled={deletingCommentId === cid}
+                            className="ml-2 text-xs text-neutral-500 hover:text-red-700 disabled:opacity-50"
+                          >
+                            {deletingCommentId === cid ? '...' : 'delete'}
+                          </button>
+                        ) : null}
+                      </li>
+                    )
+                  })}
                 </ul>
               ) : (
                 <p className="mt-2 text-sm text-neutral-500">No comments yet.</p>
