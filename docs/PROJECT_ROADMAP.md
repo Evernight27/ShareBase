@@ -1,17 +1,17 @@
 # ShareBase completion roadmap
 
-This plan compares the current ShareBase repo with the contributed Rabbit Front and Rabbit Back projects, then maps those lessons onto common MERN Instagram clone patterns. It is written as a Cursor-ready roadmap: each phase can become a small branch/PR.
+This plan compares the ShareBase baseline with the contributed Rabbit Front and Rabbit Back projects, then maps those lessons onto common MERN Instagram clone patterns. It is written as a Cursor-ready roadmap: each phase can become a small branch/PR.
 
 ## Repositories inspected
 
-- **ShareBase**: current workspace repo, `Evernight27/ShareBase`, branch `Update`.
+- **ShareBase**: current workspace repo, `Evernight27/ShareBase`, branch `main`.
 - **Rabbit Front**: `knnyshn/Rabbit-Front`, React client. GitHub contributors list includes `Evernight27`.
 - **Rabbit Back**: `knnyshn/Rabbit-Back`, Django REST backend. GitHub contributors list shows `Evernight27` as the top contributor.
 - **Instagram clone references**: public MERN clones such as `jigar-sable/instagram-mern`, `danishali22/mern-instagram-clone`, and `reaperdragon/instagram-mern` were used only for feature benchmarking.
 
 ## Baseline comparison
 
-### ShareBase today
+### ShareBase baseline before the backend foundation
 
 - README describes an "Instagram clone using MERN stack".
 - Repo currently contains only `server/`; there is no React client yet.
@@ -20,6 +20,12 @@ This plan compares the current ShareBase repo with the contributed Rabbit Front 
   - `server/routes/record.js` is still the sample employee-record CRUD route (`name`, `position`, `level`).
   - `server/db/connection.js` connects to MongoDB Atlas but selects an `employees` database.
   - No Instagram domain models, auth, image upload, comments, likes, follows, profiles, tests, or env example exist yet.
+
+The backend promotion work in this PR addresses the scaffold cleanup, health checks,
+environment contract, Mongoose `User`/`Post`/`Comment` models, JWT auth, validation,
+centralized error handling, and backend tests. The remaining roadmap should focus on
+frontend integration, posts/media APIs, profile/follow features, social interactions,
+and deployment polish.
 
 ### Rabbit Front reference
 
@@ -194,8 +200,7 @@ Use these names as the starting contract for `.env.example`, Render/Railway back
 
 - `PORT`
 - `NODE_ENV`
-- `MONGODB_URI`
-- `MONGODB_DB_NAME`
+- `ATLAS_URI`
 - `JWT_SECRET`
 - `JWT_EXPIRES_IN`
 - `CLIENT_ORIGIN`
@@ -272,15 +277,18 @@ Rabbit concepts should inform structure, not product language:
 
 ## Cursor execution plan
 
-### Phase 0: fix current ShareBase errors and repo hygiene
+### Phase 0: scaffold cleanup and repo hygiene (addressed by backend foundation)
 
 Goal: remove scaffold errors and make the repo ready for repeatable full-stack work.
+The backend foundation promotion covers this for the server side; keep the prompt
+below as historical context for what was fixed and as a checklist for future
+cleanup branches.
 
 Cursor prompt:
 
 > Fix the current ShareBase scaffold before adding product features. Add a root `.gitignore`, root README setup notes, `server/.env.example`, and useful npm scripts. Replace sample employee naming with ShareBase naming where safe, fix Express response status ordering, add a `/api/health` route, and make MongoDB connection/database config environment-driven. Do not add the React client or full product models yet.
 
-Current ShareBase issues to fix first:
+Original ShareBase issues to fix first:
 
 - `server/routes/record.js` uses sample employee fields (`name`, `position`, `level`) instead of ShareBase domain data.
 - `server/server.js` mounts `/record`; future routes should live under `/api`.
@@ -300,9 +308,12 @@ Acceptance checks:
 - Basic safe request/error logging is available without logging secrets or request bodies.
 - No secrets are committed.
 
-### Phase 1: backend foundation
+### Phase 1: backend foundation (partially addressed)
 
-Goal: replace the sample employee CRUD with Instagram domain APIs.
+Goal: replace the sample employee CRUD with Instagram domain APIs. The promoted
+backend now includes `/api/auth`, `/api/health`, and the core `User`/`Post`/
+`Comment` models; posts, profiles, follows, likes, saves, and comments APIs
+remain future work.
 
 Cursor prompt:
 
@@ -319,8 +330,9 @@ Recommended model shape:
 
 Suggested API surface:
 
-- `POST /api/auth/register`
+- `POST /api/auth/signup`
 - `POST /api/auth/login`
+- `GET /api/auth/me`
 - `GET /api/users/me`
 - `GET /api/users/:username`
 - `PATCH /api/users/me`
@@ -348,9 +360,10 @@ Acceptance checks:
 - Invalid ObjectIds and missing records return proper 400/404 responses.
 - Request validation, safe error handling, CORS allowlist, request size limits, and security middleware are in place.
 
-### Phase 2: authentication and user profiles
+### Phase 2: authentication and user profiles (auth addressed, profiles remaining)
 
-Goal: implement the identity layer before content.
+Goal: implement the identity layer before content. The backend auth endpoints
+exist; the remaining work is the React auth flow and profile APIs/pages.
 
 Cursor prompt:
 
@@ -461,18 +474,17 @@ Add these only after the MVP is solid:
 
 ## Priority checklist
 
-1. Fix current ShareBase scaffold errors and repo hygiene.
-2. Replace `/record` employee CRUD with ShareBase `/api` resources.
-3. Add auth and user profiles using the Rabbit Front/Rabbit Back auth lessons.
-4. Create a React client with route and component organization learned from Rabbit Front.
-5. Add posts with image upload and nested response shapes learned from Rabbit Back.
-6. Add feed, explore, post detail, and profile grid.
-7. Add likes, comments, follows, saves, and search.
-8. Add tests, docs, deployment config, and polish.
+1. Merge the backend foundation work and keep its auth/health/model tests passing.
+2. Add a React client with route and component organization learned from Rabbit Front.
+3. Implement posts with image upload and nested response shapes learned from Rabbit Back.
+4. Add profile/follow APIs and connect profile pages.
+5. Add feed, explore, post detail, and profile grid experiences.
+6. Add likes, comments, saves, and search.
+7. Add frontend smoke tests, deployment config, seed/demo data, and polish.
 
-## Ready-to-run first Cursor task
+## Ready-to-run next Cursor task
 
-Use this as the first implementation prompt after accepting the roadmap:
+Use this as the next implementation prompt after accepting the backend foundation:
 
-> Start Phase 0 from `docs/PROJECT_ROADMAP.md`. Fix ShareBase scaffold errors and repo hygiene only. Add `.gitignore`, `server/.env.example`, useful server scripts, a health route, correct Express status/send ordering, environment-driven MongoDB database naming, and documentation updates. Do not add the React client or full Instagram models yet. Commit and push the Phase 0 changes when server startup and the health route are verified.
+> Build the ShareBase React frontend shell against the existing `/api/auth/signup`, `/api/auth/login`, and `/api/auth/me` backend endpoints. Use Vite, React Router, one API client with `Authorization: Bearer <token>`, one localStorage token key, and useful loading/error/empty states. Keep post/profile routes as placeholders until their backend APIs are implemented. Commit and push after the client builds successfully.
 
