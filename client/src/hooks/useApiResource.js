@@ -10,14 +10,33 @@ import { apiRequest } from '../api/client.js'
  * the new server state without a full route remount.
  *
  * `enabled = false` skips the initial load (handy when the dependent
- * params aren't ready yet) — the initial `isLoading` already reflects
- * `enabled` so we never have to setState in the effect body for that.
+ * params aren't ready yet). The initial `isLoading` already reflects
+ * `enabled`, so the steady-state path avoids setting state inside the
+ * effect body.
+ *
+ * Path changes reset `data` to `null` and `isLoading` to `true` so
+ * the page shows a loading state instead of the previous path's
+ * stale data while the new request is in flight.
  */
 export default function useApiResource(path, { enabled = true } = {}) {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(Boolean(enabled))
   const [reloadCounter, setReloadCounter] = useState(0)
+  // Track the path that produced the current state. When `path`
+  // changes, the compare-and-set below resets data/isLoading
+  // synchronously during render — see "Storing information from
+  // previous renders" in the React docs. React will rerun the render
+  // immediately with the reset state before painting, so the user
+  // never sees a stale-data frame.
+  const [trackedPath, setTrackedPath] = useState(path)
+
+  if (path !== trackedPath) {
+    setTrackedPath(path)
+    setData(null)
+    setError('')
+    if (enabled) setIsLoading(true)
+  }
 
   // refetch is a regular event handler, so setting `isLoading` here
   // (not inside an effect) is fine and gives the UI an immediate
@@ -27,8 +46,6 @@ export default function useApiResource(path, { enabled = true } = {}) {
     setReloadCounter((c) => c + 1)
   }, [])
 
-  // Effect only runs async work and only updates state after the
-  // request resolves — react-hooks/set-state-in-effect is satisfied.
   useEffect(() => {
     if (!enabled) return undefined
 
