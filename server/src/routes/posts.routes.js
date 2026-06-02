@@ -24,11 +24,16 @@ import validate from "../middleware/validate.js";
 
 const router = Router();
 
-// Public reads — explore + single post + posts-by-username — don't need
-// auth so an unauthenticated visitor can browse.
+// IMPORTANT: literal-segment routes (`/explore`, `/feed`,
+// `/user/:username`) MUST come before the parameterized `/:id` routes
+// — otherwise Express matches the `/:id` route first and a request to
+// `/api/posts/feed` falls into `getById` with id="feed", failing
+// validation as "Invalid post id" instead of returning the user's
+// feed.
+
+// Public reads.
 router.get("/explore", explore);
 router.get("/user/:username", listByUsername);
-router.get("/:id", getById);
 
 // Authenticated reads.
 router.get("/feed", protect, feed);
@@ -45,6 +50,9 @@ router.post(
   create,
 );
 
+// Parameterized routes — registered last so the literal-segment routes
+// above take precedence on the segments they own.
+router.get("/:id", getById);
 router.patch("/:id", protect, validate(updatePostSchema), update);
 router.delete("/:id", protect, remove);
 
