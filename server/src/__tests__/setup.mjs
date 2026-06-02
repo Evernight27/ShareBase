@@ -15,3 +15,8 @@ process.env.JWT_SECRET = "test-secret-do-not-use-in-prod-x".padEnd(64, "x");
 // per-file `before` hook; this placeholder only exists so any module that
 // touches assertRequiredEnv at import time doesn't trip.
 process.env.ATLAS_URI ||= "mongodb://placeholder.invalid/test";
+
+// Tiny upload cap so the 413-overflow test in posts.test.mjs doesn't
+// have to actually allocate 5 MB of fixture bytes. Set BEFORE any
+// import of env.js (which freezes the value at load time).
+process.env.MAX_UPLOAD_BYTES ||= String(1024);

@@ -408,3 +408,22 @@ test("softAuth: a stale/forged token on a public read STILL returns 401, not sil
     .set("Authorization", "Bearer not.a.valid.jwt");
   assert.equal(res.status, 401);
 });
+
+// --- Upload size cap (multerErrorHandler) ----------------------------
+
+test("create post: oversize image returns 413 in the ApiError envelope", async () => {
+  // setup.mjs caps MAX_UPLOAD_BYTES at 1024 in tests, so a 2 KB
+  // buffer is comfortably over. Multer's LIMIT_FILE_SIZE error must
+  // be translated to 413 by middleware/upload.multerErrorHandler so
+  // the response shape matches the rest of the API.
+  const { token } = await signup();
+  const res = await request(app)
+    .post("/api/posts")
+    .set("Authorization", `Bearer ${token}`)
+    .attach("image", Buffer.alloc(2048, 0xff), {
+      filename: "huge.jpg",
+      contentType: "image/jpeg",
+    });
+  assert.equal(res.status, 413);
+  assert.match(res.body.error.message, /too large/i);
+});
