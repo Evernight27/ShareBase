@@ -253,3 +253,61 @@ test("delete post: only author can delete", async () => {
     .set("Authorization", `Bearer ${tokenAlice}`);
   assert.equal(ok.status, 200);
 });
+
+// --- Feed (regression: routes used to shadow /feed under /:id) -------
+
+test("feed: requires auth", async () => {
+  const res = await request(app).get("/api/posts/feed");
+  assert.equal(res.status, 401);
+});
+
+test("feed: empty list when user follows nobody and has no posts", async () => {
+  const { token } = await signup();
+  const res = await request(app)
+    .get("/api/posts/feed")
+    .set("Authorization", `Bearer ${token}`);
+  // Regression: prior to the route reorder, this hit the /:id handler
+  // with id="feed" and returned 400 "Invalid post id". Pin the
+  // expected status here.
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.posts, []);
+});
+
+test("feed: includes own posts and followed-user posts, newest first", async () => {
+  const alice = await signup({ username: "alice", email: "a@example.com" });
+  const bob = await signup({ username: "bob", email: "b@example.com" });
+  const carol = await signup({ username: "carol", email: "c@example.com" });
+
+  // Alice follows Bob (but not Carol).
+  await request(app)
+    .post(`/api/users/${bob.user.id || bob.user._id}/follow`)
+    .set("Authorization", `Bearer ${alice.token}`);
+
+  // Each user makes a post.
+  await createPostFixture(alice.token, "alice-post");
+  await createPostFixture(bob.token, "bob-post");
+  await createPostFixture(carol.token, "carol-post");
+
+  const res = await request(app)
+    .get("/api/posts/feed")
+    .set("Authorization", `Bearer ${alice.token}`);
+  assert.equal(res.status, 200);
+  const captions = res.body.posts.map((p) => p.caption).sort();
+  assert.deepEqual(captions, ["alice-post", "bob-post"]);
+});
+
+// --- Privacy: populated author payload must not leak email ----------
+
+test("populated post.author does NOT leak email", async () => {
+  const { token } = await signup({ username: "alice", email: "alice@example.com" });
+  const created = await createPostFixture(token, "hi");
+  const id = created.body.post._id || created.body.post.id;
+
+  const detail = await request(app).get(`/api/posts/${id}`);
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.post.author.username, "alice");
+  assert.equal(detail.body.post.author.email, undefined);
+
+  const explore = await request(app).get("/api/posts/explore");
+  assert.equal(explore.body.posts[0].author.email, undefined);
+});

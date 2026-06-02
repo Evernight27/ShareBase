@@ -149,3 +149,51 @@ test("follow: 400 on malformed user id", async () => {
     .set("Authorization", `Bearer ${token}`);
   assert.equal(res.status, 400);
 });
+
+// --- Privacy regression tests ----------------------------------------
+
+test("getByUsername: does NOT leak email to public callers", async () => {
+  await signup({ username: "alice", email: "alice@example.com" });
+  const res = await request(app).get("/api/users/alice");
+  assert.equal(res.status, 200);
+  assert.equal(res.body.user.username, "alice");
+  assert.equal(res.body.user.email, undefined, "email must be private");
+  assert.equal(res.body.user.password, undefined);
+});
+
+test("search: does NOT leak emails", async () => {
+  await signup({ username: "alice", email: "alice@example.com" });
+  const res = await request(app).get("/api/users/search?q=ali");
+  assert.equal(res.status, 200);
+  assert.equal(res.body.users.length, 1);
+  assert.equal(res.body.users[0].email, undefined);
+});
+
+test("/api/auth/me: DOES return the requester's own email", async () => {
+  const { token } = await signup({ username: "alice", email: "alice@example.com" });
+  const res = await request(app)
+    .get("/api/auth/me")
+    .set("Authorization", `Bearer ${token}`);
+  assert.equal(res.status, 200);
+  assert.equal(res.body.user.email, "alice@example.com");
+});
+
+test("PATCH /me: response includes own email", async () => {
+  const { token } = await signup({ username: "alice", email: "alice@example.com" });
+  const res = await request(app)
+    .patch("/api/users/me")
+    .set("Authorization", `Bearer ${token}`)
+    .send({ bio: "hello" });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.user.email, "alice@example.com");
+  assert.equal(res.body.user.bio, "hello");
+});
+
+test("getByUsername: response has no embedded followers/following arrays", async () => {
+  await signup({ username: "alice" });
+  const res = await request(app).get("/api/users/alice");
+  // Source of truth for the follow graph is the Follow collection;
+  // legacy embedded arrays have been removed from the schema.
+  assert.equal(res.body.user.followers, undefined);
+  assert.equal(res.body.user.following, undefined);
+});
