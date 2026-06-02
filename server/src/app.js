@@ -6,6 +6,8 @@ import morgan from "morgan";
 import env, { isProd, isTest } from "./config/env.js";
 import authRoutes from "./routes/auth.routes.js";
 import healthRoutes from "./routes/health.routes.js";
+import postsRoutes from "./routes/posts.routes.js";
+import usersRoutes from "./routes/users.routes.js";
 import { errorHandler, notFound } from "./middleware/error.js";
 
 const app = express();
@@ -38,10 +40,8 @@ app.get("/", (req, res) => {
 
 app.use("/api/health", healthRoutes);
 app.use("/api/auth", authRoutes);
-
-// Future domain routes:
-//   app.use("/api/users", userRoutes);   // Phase 4
-//   app.use("/api/posts", postRoutes);   // Phase 3
+app.use("/api/posts", postsRoutes);
+app.use("/api/users", usersRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
