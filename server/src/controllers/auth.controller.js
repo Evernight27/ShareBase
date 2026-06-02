@@ -1,7 +1,12 @@
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
-import User, { USERNAME_PATTERN, USERNAME_MESSAGE } from "../models/User.js";
+import User, {
+  USERNAME_PATTERN,
+  USERNAME_MESSAGE,
+  RESERVED_USERNAMES,
+  RESERVED_USERNAME_MESSAGE,
+} from "../models/User.js";
 import ApiError from "../utils/ApiError.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import { signToken } from "../utils/jwt.js";
@@ -10,7 +15,15 @@ import { signToken } from "../utils/jwt.js";
 
 // Reuse the regex + message that the Mongoose model enforces so the two
 // validators can't drift.
-const usernameSchema = z.string().trim().toLowerCase().regex(USERNAME_PATTERN, USERNAME_MESSAGE);
+const usernameSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(USERNAME_PATTERN, USERNAME_MESSAGE)
+  // Reject names that would shadow router segments (`/search`,
+  // `/explore`, `/api`, etc.). Same set is enforced at the model
+  // layer in case a future tool writes directly to the DB.
+  .refine((v) => !RESERVED_USERNAMES.has(v), { message: RESERVED_USERNAME_MESSAGE });
 
 const emailSchema = z.string().trim().toLowerCase().email("email is invalid");
 

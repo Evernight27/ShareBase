@@ -5,6 +5,36 @@ import bcrypt from "bcryptjs";
 // without drift between Mongoose `match` and Zod `regex` rules.
 export const USERNAME_PATTERN = /^[a-z0-9._]{3,30}$/;
 export const USERNAME_MESSAGE = "username must be 3-30 chars (a-z, 0-9, '.', '_')";
+
+// Names that already have meaning in the URL/router space and would
+// shadow real routes if a user picked one. Some (`me`, `p`) are
+// already excluded by USERNAME_PATTERN's 3-char minimum, but we list
+// them anyway so the deny-list documents the full intent.
+//
+// Exported so the zod signup schema can run the same check without
+// drift between the two layers, and so a future tool (e.g. a
+// rename-user admin command) can reuse it.
+export const RESERVED_USERNAMES = new Set([
+  "me",
+  "p",
+  "search",
+  "explore",
+  "feed",
+  "create",
+  "accounts",
+  "admin",
+  "root",
+  "api",
+  "auth",
+  "users",
+  "posts",
+  "health",
+  "support",
+  "help",
+  "settings",
+]);
+export const RESERVED_USERNAME_MESSAGE = "username is reserved";
+
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const BCRYPT_ROUNDS = 10;
 
@@ -20,6 +50,14 @@ const userSchema = new mongoose.Schema(
       // index and Mongoose 9 warns about it at startup.
       unique: true,
       match: [USERNAME_PATTERN, USERNAME_MESSAGE],
+      // Defense in depth: the zod schema rejects reserved usernames
+      // first with a friendly per-field error, but a direct DB write
+      // (admin tool, migration script) would otherwise bypass that
+      // check. Mongoose validate runs on save() and create().
+      validate: {
+        validator: (v) => !RESERVED_USERNAMES.has(v),
+        message: RESERVED_USERNAME_MESSAGE,
+      },
     },
     email: {
       type: String,
