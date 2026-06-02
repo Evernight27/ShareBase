@@ -1,14 +1,19 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../auth/authContext.js'
 
-const navItems = [
+// Static nav items shown to everyone. The "Create" entry is conditional
+// because it's auth-required (ProtectedRoute would redirect anyway,
+// but showing a link that always bounces to login is bad UX).
+const PUBLIC_NAV_ITEMS = [
   { to: '/', label: 'Home' },
   { to: '/explore', label: 'Explore' },
-  { to: '/create', label: 'Create' },
 ]
 
 export default function Layout() {
   const { isAuthenticated, logout, user } = useAuth()
+  const navItems = isAuthenticated
+    ? [...PUBLIC_NAV_ITEMS, { to: '/create', label: 'Create' }]
+    : PUBLIC_NAV_ITEMS
 
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900">
@@ -22,6 +27,7 @@ export default function Layout() {
               <NavLink
                 key={item.to}
                 to={item.to}
+                end={item.to === '/'}
                 className={({ isActive }) =>
                   `rounded-full px-3 py-2 ${
                     isActive ? 'bg-neutral-900 text-white' : 'text-neutral-700 hover:bg-neutral-100'
