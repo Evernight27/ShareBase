@@ -18,6 +18,15 @@ function parsePort(raw, fallback = 5050) {
   return n;
 }
 
+function parseBytes(raw, fallback) {
+  if (raw === undefined || raw === "") return fallback;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error(`Invalid byte size: ${JSON.stringify(raw)} (must be a positive integer)`);
+  }
+  return n;
+}
+
 const env = {
   NODE_ENV: process.env.NODE_ENV || "development",
   PORT: parsePort(process.env.PORT),
@@ -28,6 +37,13 @@ const env = {
   CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME || "",
   CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY || "",
   CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET || "",
+  CLOUDINARY_FOLDER: process.env.CLOUDINARY_FOLDER || "sharebase",
+  // Cap multer's per-file limit; matches the documented "image post"
+  // upper bound rather than letting clients pin RAM with arbitrarily
+  // large multipart bodies.
+  MAX_UPLOAD_BYTES: parseBytes(process.env.MAX_UPLOAD_BYTES, 5 * 1024 * 1024),
+  POSTS_PAGE_DEFAULT: parseBytes(process.env.POSTS_PAGE_DEFAULT, 12),
+  POSTS_PAGE_MAX: parseBytes(process.env.POSTS_PAGE_MAX, 50),
 };
 
 export const isProd = env.NODE_ENV === "production";
@@ -67,12 +83,33 @@ export function assertRequiredEnv() {
     }
   }
 
+  // Cloudinary is optional (post upload returns 503 if unconfigured),
+  // but if any of the three is set, all three must be — partial
+  // configs are the most likely-to-misbehave case.
+  const cloudinaryParts = [
+    env.CLOUDINARY_CLOUD_NAME,
+    env.CLOUDINARY_API_KEY,
+    env.CLOUDINARY_API_SECRET,
+  ];
+  const cloudinaryFilled = cloudinaryParts.filter(Boolean).length;
+  if (cloudinaryFilled !== 0 && cloudinaryFilled !== 3) {
+    missing.push(
+      "CLOUDINARY_CLOUD_NAME / CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET (must all be set together, or all left blank)",
+    );
+  }
+
   if (missing.length) {
     throw new Error(
       `Missing required env vars: ${missing.join(", ")}. ` +
         `Copy server/.env.example to server/.env and fill them in.`,
     );
   }
+}
+
+export function isCloudinaryConfigured() {
+  return Boolean(
+    env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET,
+  );
 }
 
 export default env;

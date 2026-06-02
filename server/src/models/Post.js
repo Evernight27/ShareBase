@@ -14,6 +14,9 @@ const postSchema = new mongoose.Schema(
     imagePublicId: { type: String, default: "" },
     caption: { type: String, default: "", maxlength: 2200, trim: true },
     likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User", index: true }],
+    // Users who bookmarked this post. Distinct from `likes` (a like is a
+    // public reaction; a save is a private "remember this for later").
+    savedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     comments: [{ type: mongoose.Schema.Types.ObjectId, ref: "Comment" }],
   },
   {
